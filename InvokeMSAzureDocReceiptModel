@@ -1,0 +1,97 @@
+Local Message &request, &response;
+Local Message &analy_request, &analy_response;
+Local Document &DOC;
+
+&request = CreateMessage(Operation.DR_DOC_REQ_ANALYSE_POST);
+
+&bRet = &request.IBInfo.LoadRESTHeaders();
+
+/* Add any additional headers not defined on the routing */
+&bRet = &request.IBInfo.IBConnectorInfo.AddConnectorProperties("Ocp-Apim-Subscription-Key", "<Enter Your Key>", %HttpHeader);
+
+/* Add Bearer Token for Authorisation */
+&bRet = &request.IBInfo.IBConnectorInfo.AddConnectorProperties("Authorization", "Bearer eyJhbGciOiJFUzI1NiIsImtpZCI6ImtleTEiLCJ0eXAiOiJKV1QifQ.eyJyZWdpb24iOiJlYXN0dXMiLCJzdWJzY3JpcHRpb24taWQiOiI5YjdlNmU5MWUyNzM0ZTFjYTc4N2I2ZDdjYmQzZDA4NCIsInByb2R1Y3QtaWQiOiJDb2duaXRpdmVTZXJ2aWNlcy5TMCIsImNvZ25pdGl2ZS1zZXJ2aWNlcy1lbmRwb2ludCI6Imh0dHBzOi8vYXBpLmNvZ25pdGl2ZS5taWNyb3NvZnQuY29tL2ludGVybmFsL3YxLjAvIiwiYXp1cmUtcmVzb3VyY2UtaWQiOiIvc3Vic2NyaXB0aW9ucy8wNjZjMTc5YS05ZmIyLTRjZGYtYTJhYS1iZTkyMDdhMWNhMjEvcmVzb3VyY2VHcm91cHMvTXlBSS9wcm92aWRlcnMvTWljcm9zb2Z0LkNvZ25pdGl2ZVNlcnZpY2VzL2FjY291bnRzL2RlZXBha3RyaWFsYWkiLCJzY29wZSI6WyJzcGVlY2h0b2ludGVudHMiLCJodHRwczovL2FwaS5taWNyb3NvZnR0cmFuc2xhdG9yLmNvbS8iLCJzcGVlY2hzZXJ2aWNlcyIsInZpc2lvbiJdLCJhdWQiOlsidXJuOm1zLnNwZWVjaCIsInVybjptcy5sdWlzLmVhc3R1cyIsInVybjptcy5taWNyb3NvZnR0cmFuc2xhdG9yIiwidXJuOm1zLnNwZWVjaHNlcnZpY2VzLmVhc3R1cyIsInVybjptcy52aXNpb24uZWFzdHVzIl0sImV4cCI6MTcyMjY1MTI3MCwiaXNzIjoidXJuOm1zLmNvZ25pdGl2ZXNlcnZpY2VzIn0", %HttpHeader);
+
+&request.URIResourceIndex = 1;
+&DOC = &request.GetURIDocument();
+
+/* Build the json body for the request */
+If Substring(DR_TEST_WRK.URL, 1, 4) = "http" Then
+   &json_msg = "{";
+   &json_msg = &json_msg | """urlSource"": """ | DR_TEST_WRK.URL | """";
+   &json_msg = &json_msg | "}";
+Else
+   Local File &F1;
+   Local string &base64string;
+   
+   &F1 = GetFile(DR_TEST_WRK.URL, "R", %FilePath_Absolute);
+   If &F1.IsOpen Then
+      &base64string = &F1.GetBase64StringFromBinary();
+      &F1.Close();
+   End-If;
+   &json_msg = "{";
+   &json_msg = &json_msg | """base64Source"": """ | &base64string | """";
+   &json_msg = &json_msg | "}";
+End-If;
+
+
+rem Set the json content to the request object;
+&res = &request.SetContentString(&json_msg);
+&response = %IntBroker.SyncRequest(&request);
+
+rem retrieve the apim-request-id from the Response Headers;
+For &i = 1 To &response.IBInfo.IBConnectorInfo.GetNumberOfConnectorProperties()
+   &name = &response.IBInfo.IBConnectorInfo.GetConnectorPropertiesName(&i);
+   &value = &response.IBInfo.IBConnectorInfo.GetConnectorPropertiesValue(&i);
+   If &name = "apim-request-id" Then
+      &apimrequestid = &value;
+   End-If;
+End-For;
+
+rem If apim-request-id is present, then form the URI for the next GET Request;
+If All(&apimrequestid) Then
+   &analy_request = CreateMessage(Operation.DR_DOC_ANALYSE_GET);
+   &bRet = &analy_request.IBInfo.LoadRESTHeaders();
+   
+   &bRet = &analy_request.IBInfo.IBConnectorInfo.AddConnectorProperties("Ocp-Apim-Subscription-Key", "<Enter Your Key>", %HttpHeader);
+   &bRet = &analy_request.IBInfo.IBConnectorInfo.AddConnectorProperties("Authorization", "Bearer eyJhbGciOiJFUzI1NiIsImtpZCI6ImtleTEiLCJ0eXAiOiJKV1QifQ.eyJyZWdpb24iOiJlYXN0dXMiLCJzdWJzY3JpcHRpb24taWQiOiI5YjdlNmU5MWUyNzM0ZTFjYTc4N2I2ZDdjYmQzZDA4NCIsInByb2R1Y3QtaWQiOiJDb2duaXRpdmVTZXJ2aWNlcy5TMCIsImNvZ25pdGl2ZS1zZXJ2aWNlcy1lbmRwb2ludCI6Imh0dHBzOi8vYXBpLmNvZ25pdGl2ZS5taWNyb3NvZnQuY29tL2ludGVybmFsL3YxLjAvIiwiYXp1cmUtcmVzb3VyY2UtaWQiOiIvc3Vic2NyaXB0aW9ucy8wNjZjMTc5YS05ZmIyLTRjZGYtYTJhYS1iZTkyMDdhMWNhMjEvcmVzb3VyY2VHcm91cHMvTXlBSS9wcm92aWRlcnMvTWljcm9zb2Z0LkNvZ25pdGl2ZVNlcnZpY2VzL2FjY291bnRzL2RlZXBha3RyaWFsYWkiLCJzY29wZSI6WyJzcGVlY2h0b2ludGVudHMiLCJodHRwczovL2FwaS5taWNyb3NvZnR0cmFuc2xhdG9yLmNvbS8iLCJzcGVlY2hzZXJ2aWNlcyIsInZpc2lvbiJdLCJhdWQiOlsidXJuOm1zLnNwZWVjaCIsInVybjptcy5sdWlzLmVhc3R1cyIsInVybjptcy5taWNyb3NvZnR0cmFuc2xhdG9yIiwidXJuOm1zLnNwZWVjaHNlcnZpY2VzLmVhc3R1cyIsInVybjptcy52aXNpb24uZWFzdHVzIl0sImV4cCI6MTcyMjY1MTI3MCwiaXNzIjoidXJuOm1zLmNvZ25pdGl2ZXNlcnZpY2VzIn0", %HttpHeader);
+   
+   
+   &DOC = &analy_request.GetURIDocument();
+   rem Assign the apim-request-id to the Document URI;
+   &DOC.DocumentElement.GetPropertyByName("apimrequestid").value = &apimrequestid;
+   
+   &analy_request.URIResourceIndex = 1;
+   
+   rem Wait for 5 secs, before actually submitting the request because many a times it happens that the previous request is still processing;
+   GetJavaClass("java.lang.Thread").sleep(5000);
+   
+   &analy_response = %IntBroker.SyncRequest(&analy_request);
+   
+   /*For debuggin, confirm the response */
+   Local File &file = GetFile("E:\temp\response.txt", "w", %FilePath_Absolute);
+   &file.WriteLine(&analy_response.GetContentString());
+   &file.Close();
+   
+   /* Create an instance of the JsonParser */
+   Local JsonParser &parser = CreateJsonParser();
+   
+   Local boolean &status = &parser.Parse(&analy_response.GetContentString());
+   Local JsonObject &rootObj = &parser.GetRootObject();
+   
+   /* Navigate through the JSON structure */
+   Local JsonObject &analyzeResult = &rootObj.GetJsonObject("analyzeResult");
+   Local JsonArray &documents = &analyzeResult.GetJsonArray("documents");
+   Local JsonObject &document = &documents.GetJsonObject(1);
+   Local JsonObject &fields = &document.GetJsonObject("fields");
+   Local JsonArray &items = &fields.GetJsonArray("Items");
+   
+   /* Extract total amount and Currency */
+   Local number &totalAmount = &fields.GetJsonObject("Total").GetJsonObject("valueCurrency").GetNumber("amount");
+   Local string &currencyCode = &fields.GetJsonObject("Total").GetJsonObject("valueCurrency").GetString("currencyCode");
+   rem WinMessage("Total Amount: " | &currencyCode | " " | &totalAmount, 0);
+   
+   /* Extract Transaction Date */
+   Local string &valueDate = &fields.GetJsonObject("TransactionDate").GetString("valueDate");
+   WinMessage("Date: " | &valueDate | " - " | "Total Amount: " | &currencyCode | " " | &totalAmount, 0);
+End-If;
